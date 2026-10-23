@@ -93,13 +93,15 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Erreur interne du serveur' });
 });
 
+  module.exports = app;
+
 if (require.main === module) {
-  app.listen(PORT, (err) => {
-    if (err) {
-      console.error('Impossible de démarrer le serveur :', err.message);
-      process.exit(1);
-    }
-    console.log(`API sur le port ${PORT}`);
-  });
+  app.listen(PORT, () => console.log("Serveur sur le port " + PORT));
 }
-module.exports = app; // utilisé par Vercel
+const cors = require("cors");
+app.use(cors({
+  origin: [
+    "http://localhost:5500",
+    "https://mern-wiam-khemrich.vercel.app"
+  ]
+}));
