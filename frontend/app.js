@@ -1,29 +1,48 @@
 // ---- Configuration non secrète (URLs centralisées) ----
 const CONFIG = {
-  BACKENDS: ['http://localhost:3000'], // sera complété avec les URLs Vercel et Cloudflare
+  BACKENDS: [
+    'https://mern-wiam-khemrich-backend.vercel.app',   // principal
+    'https://mern-api-wiam.khemrich.workers.dev',      // secours
+  ],
   TIMEOUT_MS: 6000,
 };
-const API_URL = CONFIG.BACKENDS[0];
 
+// Aide pour la démonstration : ?test=B (principal HS) ou ?test=C (les deux HS)
+const TEST_MODE = new URLSearchParams(location.search).get('test');
+const BAD_URL = 'https://backend-indisponible.invalid';
+if (TEST_MODE === 'B') CONFIG.BACKENDS[0] = BAD_URL;
+if (TEST_MODE === 'C') CONFIG.BACKENDS = [BAD_URL, BAD_URL + '/secours'];
+
+// ---- Appel avec bascule automatique ----
+async function fetchWithFallback(path, options = {}) {
+  const errors = [];
+  for (const base of CONFIG.BACKENDS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CONFIG.TIMEOUT_MS);
+    try {
+      const response = await fetch(base + path, { ...options, signal: controller.signal });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return { data: await response.json(), backend: base };
+    } catch (err) {
+      const reason = err.name === 'AbortError' ? 'délai dépassé' : err.message;
+      errors.push(base + ' : ' + reason);
+      console.warn('Échec sur', base, '-', reason);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error('Aucun serveur disponible. ' + errors.join(' | '));
+}
+
+// ---- Interface ----
 const form = document.getElementById('item-form');
 const statusEl = document.getElementById('status');
 const listEl = document.getElementById('items');
+let pendingRequestId = null; // même clé réutilisée tant que le POST n'a pas réussi
 
 function setStatus(msg, isError = false) {
   statusEl.textContent = msg;
   statusEl.className = isError ? 'error' : '';
-}
-
-async function apiFetch(path, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CONFIG.TIMEOUT_MS);
-  try {
-    const response = await fetch(API_URL + path, { ...options, signal: controller.signal });
-    if (!response.ok) throw new Error('Erreur HTTP ' + response.status);
-    return await response.json();
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 function render(items) {
@@ -41,10 +60,13 @@ function render(items) {
 async function loadItems() {
   try {
     setStatus('Chargement…');
-    render(await apiFetch('/api/items'));
-    setStatus('');
+    const { data, backend } = await fetchWithFallback('/api/items');
+    render(data);
+    setStatus('Serveur utilisé : ' + backend);
   } catch (e) {
-    setStatus('Impossible de charger les éléments : ' + e.message, true);
+    render([]);
+    setStatus('Impossible de joindre les serveurs. Réessayez plus tard.', true);
+    console.error(e);
   }
 }
 
@@ -52,19 +74,22 @@ form.addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const btn = form.querySelector('button');
   btn.disabled = true;
+  pendingRequestId = pendingRequestId || crypto.randomUUID();
   try {
-    await apiFetch('/api/items', {
+    await fetchWithFallback('/api/items', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': pendingRequestId },
       body: JSON.stringify({
         name: document.getElementById('name').value,
         description: document.getElementById('description').value,
       }),
     });
+    pendingRequestId = null;
     form.reset();
     await loadItems();
   } catch (e) {
-    setStatus("Impossible d'ajouter l'élément : " + e.message, true);
+    setStatus("L'élément n'a pas pu être ajouté : aucun serveur ne répond.", true);
+    console.error(e);
   } finally {
     btn.disabled = false;
   }
