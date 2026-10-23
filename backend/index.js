@@ -98,10 +98,3 @@ app.use((err, req, res, next) => {
 if (require.main === module) {
   app.listen(PORT, () => console.log("Serveur sur le port " + PORT));
 }
-const cors = require("cors");
-app.use(cors({
-  origin: [
-    "http://localhost:5500",
-    "https://mern-wiam-khemrich.vercel.app"
-  ]
-}));

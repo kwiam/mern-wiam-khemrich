@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "engines": {
+  "node": "22.x"
+},
   "scripts": {
   "start": "node index.js",
   "wiam": "nodemon index.js"
@@ -20,4 +23,5 @@
   "devDependencies": {
     "nodemon": "^3.1.14"
   }
+  
 }
